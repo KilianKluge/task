@@ -64,6 +64,45 @@ class TaskExecutionRepository extends Repository
         }
     }
 
+    public function removeByIdentifier(string $identifier): void
+    {
+        $query = $this->createQuery();
+        $query->matching(
+            $query->logicalAnd(
+                $query->equals('taskIdentifier', $identifier)
+            )
+        );
+
+        foreach ($query->execute() as $scheduledTask) {
+            try {
+                $this->remove($scheduledTask);
+            } catch (ORMException|IllegalObjectTypeException $e) {
+                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
+            }
+        }
+    }
+
+    public function removeByStatus(string $status): int
+    {
+        $query = $this->createQuery();
+        $query->matching(
+            $query->logicalAnd(
+                $query->equals('status', $status)
+            )
+        );
+
+        $removed = 0;
+        foreach ($query->execute() as $scheduledTask) {
+            try {
+                $this->remove($scheduledTask);
+                $removed++;
+            } catch (ORMException|IllegalObjectTypeException $e) {
+                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
+            }
+        }
+        return $removed;
+    }
+
     public function findLatestExecution(Task $task, int $limit = 5, int $offset = 0): QueryResultInterface
     {
         $query = $this->createQuery();
