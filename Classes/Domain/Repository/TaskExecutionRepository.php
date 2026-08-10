@@ -64,30 +64,16 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function removeByIdentifier(string $identifier): void
+    public function removeByOptions(string $taskIdentifier, string $status): int
     {
         $query = $this->createQuery();
+
+        $constraints = [];
+        if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
+        if ($status) $constraints[] = $query->equals('status', $status);
         $query->matching(
             $query->logicalAnd(
-                $query->equals('taskIdentifier', $identifier)
-            )
-        );
-
-        foreach ($query->execute() as $scheduledTask) {
-            try {
-                $this->remove($scheduledTask);
-            } catch (ORMException|IllegalObjectTypeException $e) {
-                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
-            }
-        }
-    }
-
-    public function removeByStatus(string $status): int
-    {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('status', $status)
+                $constraints
             )
         );
 

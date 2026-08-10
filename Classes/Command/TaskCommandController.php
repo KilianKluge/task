@@ -1,183 +1,196 @@
 <?php
 declare(strict_types=1);
 
-namespace Flowpack\Task\Domain\Repository;
+namespace Flowpack\Task\Command;
 
-use DateTime;
-use Doctrine\DBAL\Types\Types;
-use Doctrine\ORM\AbstractQuery;
-use Doctrine\ORM\ORMException;
 use Flowpack\Task\Domain\Model\TaskExecution;
-use Neos\Flow\Annotations as Flow;
+use Flowpack\Task\Domain\Repository\TaskExecutionRepository;
+use Flowpack\Task\Domain\Runner\TaskRunner;
+use Flowpack\Task\Domain\Scheduler\Scheduler;
 use Flowpack\Task\Domain\Task\Task;
+use Flowpack\Task\Domain\Task\TaskCollectionFactory;
+use Flowpack\Task\Domain\Task\TaskExecutionHistory;
+use Flowpack\Task\Domain\Task\TaskInterface;
 use Flowpack\Task\Domain\Task\TaskStatus;
-use Neos\Flow\Persistence\Doctrine\Repository;
-use Neos\Flow\Persistence\Exception\IllegalObjectTypeException;
-use Neos\Flow\Persistence\QueryInterface;
-use Neos\Flow\Persistence\QueryResultInterface;
+use Neos\Flow\Annotations as Flow;
+use Neos\Flow\Cli\CommandController;
+use Neos\Flow\Cli\Exception\StopCommandException;
 
-/**
- * @Flow\Scope("singleton")
- */
-class TaskExecutionRepository extends Repository
+class TaskCommandController extends CommandController
 {
-    public function findPending(Task $task): QueryResultInterface
+
+    /**
+     * @Flow\Inject
+     * @var TaskCollectionFactory
+     */
+    protected $taskCollectionFactory;
+
+    /**
+     * @Flow\Inject
+     * @var Scheduler
+     */
+    protected $scheduler;
+
+    /**
+     * @Flow\Inject
+     * @var TaskExecutionRepository
+     */
+    protected $taskExecutionRepository;
+
+    /**
+     * @Flow\Inject
+     * @var TaskRunner
+     */
+    protected $taskRunner;
+
+    /**
+     * @Flow\Inject
+     * @var TaskExecutionHistory
+     */
+    protected $taskExecutionHistory;
+
+    protected array $lastExecutionStatusMapping = [
+        TaskStatus::FAILED => 'error',
+        TaskStatus::COMPLETED => 'success',
+        TaskStatus::RUNNING => 'em',
+        TaskStatus::ABORTED => 'strike'
+    ];
+
+    /**
+     * @throws \Exception
+     */
+    public function runCommand(): void
     {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('taskIdentifier', $task->getIdentifier()),
-                $query->logicalOr(
-                    $query->equals('status', TaskStatus::PLANNED),
-                    $query->equals('status', TaskStatus::RUNNING),
-                )
-            )
+        $this->scheduler->scheduleTasks();
+        $this->taskRunner->runTasks();
+        $this->taskExecutionHistory->cleanup();
+    }
+
+    /**
+     * Run a task directly
+     *
+     * @param string $taskIdentifier
+     * @throws \Exception
+     */
+    public function runSingleCommand(string $taskIdentifier): void
+    {
+        $task = $this->getTaskByIdentifier($taskIdentifier);
+        $this->scheduler->scheduleTask($task);
+        $this->taskRunner->runTasks();
+        $this->scheduler->scheduleTasks();
+        $this->taskExecutionHistory->cleanup();
+    }
+
+    /**
+     * Lists all defined tasks
+     * @throws \Exception
+     */
+    public function listCommand(): void
+    {
+        $tasks = $this->taskCollectionFactory->buildTasksFromConfiguration()->toArray();
+        if ($tasks === []) {
+            $this->outputLine('<comment>No tasks configured yet</comment>');
+            return;
+        }
+        $this->scheduler->scheduleTasks();
+
+        $this->output->outputTable(array_map(function (TaskInterface $task) {
+            /** @var TaskExecution $latestExecution */
+            $latestExecution = $this->taskExecutionRepository->findLatestExecution($task, 1)->getFirst();
+            return [
+                $task->getIdentifier(),
+                $task->getLabel(),
+                $task->getCronExpression(),
+                $task->getHandlerClass(),
+                $latestExecution === null || $latestExecution->getEndTime() === null ? '-' : $latestExecution->getEndTime()->format('Y-m-d H:i:s') ?? $latestExecution->getStartTime()->format('Y-m-d H:i:s'),
+                $latestExecution === null ? '-' : sprintf('<%s>%s</%s>', $this->lastExecutionStatusMapping[$latestExecution->getStatus()], $latestExecution->getStatus(), $this->lastExecutionStatusMapping[$latestExecution->getStatus()]),
+                $latestExecution === null || $latestExecution->getDuration() === null ? '-' : number_format($latestExecution->getDuration(), 2) . ' s',
+                $this->getNextExecutionInfo($task),
+            ];
+        }, $tasks),
+            ['Identifier', 'Label', 'Cron Expression', 'Handler Class', 'Previous Run Date', 'Previous Run Status', 'Previous Run Duration', 'Next Run']
         );
-        return $query->execute();
     }
 
-    public function findByTask(Task $task): QueryResultInterface
+    /**
+     * @param string $taskIdentifier
+     * @throws \JsonException|StopCommandException
+     */
+    public function showCommand(string $taskIdentifier): void
     {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->equals('taskIdentifier', $task->getIdentifier()),
-        );
-        return $query->execute();
-    }
+        $task = $this->getTaskByIdentifier($taskIdentifier);
+        $this->outputLine(sprintf('<b>%s (%s)</b>', $task->getLabel(), $taskIdentifier));
+        $this->outputLine(PHP_EOL . $task->getDescription() . PHP_EOL);
 
-    public function removePlannedTask(Task $task): void
-    {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('taskIdentifier', $task->getIdentifier()),
-                $query->equals('status', TaskStatus::PLANNED)
-            )
-        );
-
-        foreach ($query->execute() as $scheduledTask) {
-            try {
-                $this->remove($scheduledTask);
-            } catch (ORMException|IllegalObjectTypeException $e) {
-                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
-            }
-        }
-    }
-
-    public function removeByOptions($taskIdentifier, $status): int
-    {
-        $query = $this->createQuery();
-        $constraints = [];
-        if ($status) $constraints[] = $query->equals('status', $status);
-        if ($taskIdentifier) $query->equals('taskIdentifier', $taskIdentifier);
-        $query->matching(
-            $query->logicalAnd(
-                $constraints
-            )
+        $this->outputLine('<b>Task Info</b>');
+        $this->output->outputTable(
+            [
+                ['Cron Expression', $task->getCronExpression()],
+                ['First Execution', $task->getFirstExecution() === null ? '-' : $task->getFirstExecution()->format('Y-m-d H:i:s')],
+                ['Last Execution', $task->getLastExecution() === null ? '-' : $task->getLastExecution()->format('Y-m-d H:i:s')],
+                ['Handler Class', $task->getHandlerClass()],
+                ['Workload', $task->getWorkload() !== null ? json_encode($task->getWorkload()->getData(), JSON_THROW_ON_ERROR + JSON_PRETTY_PRINT) : '-'],
+                ['Next Run', $this->getNextExecutionInfo($task)],
+            ]
         );
 
-        $removed = 0;
-        foreach ($query->execute() as $scheduledTask) {
-            try {
-                $this->remove($scheduledTask);
-                $removed++;
-            } catch (ORMException|IllegalObjectTypeException $e) {
-                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
-            }
-        }
-        return $removed;
-    }
+        $this->outputLine(PHP_EOL . '<b>Task Executions</b>');
+        $taskExecutions = $this->taskExecutionRepository->findLatestExecution($task);
 
-    public function removeByIdentifier(string $identifier): void
-    {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('taskIdentifier', $identifier)
-            )
+        if ($taskExecutions->count() === 0) {
+            $this->outputLine('This task has not yet been executed.');
+            return;
+        }
+
+        $this->output->outputTable(
+            array_map(function (TaskExecution $execution) {
+                return [
+                    sprintf('<b>%s</b>', $execution->getScheduleTime()->format('Y-m-d H:i:s')),
+                    number_format($execution->getDuration(), 2) . ' s',
+                    sprintf('<%s>%s</%s> %s %s', $this->lastExecutionStatusMapping[$execution->getStatus()], $execution->getStatus(), $this->lastExecutionStatusMapping[$execution->getStatus()], $execution->getResult(), $execution->getException()),
+                ];
+            }, $taskExecutions->toArray()),
+            ['Date','Run Duration', 'Status']
         );
-
-        foreach ($query->execute() as $scheduledTask) {
-            try {
-                $this->remove($scheduledTask);
-            } catch (ORMException|IllegalObjectTypeException $e) {
-                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
-            }
-        }
     }
 
-    public function removeByStatus(string $status): int
+    /**
+     * @param string|null $task Task Identifier
+     * @param string|null $status Status
+     */
+    public function cleanCommand(string $task = null, string $status = null): void
     {
-        $query = $this->createQuery();
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('status', $status)
-            )
-        );
-
-        $removed = 0;
-        foreach ($query->execute() as $scheduledTask) {
-            try {
-                $this->remove($scheduledTask);
-                $removed++;
-            } catch (ORMException|IllegalObjectTypeException $e) {
-                throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
-            }
-        }
-        return $removed;
+        $removed = $this->taskExecutionRepository->removeByOptions($task, $status);
+        $this->outputLine("Removed "+$removed+" entries");
     }
 
-    public function findLatestExecution(Task $task, int $limit = 5, int $offset = 0): QueryResultInterface
+    /**
+     * @param TaskInterface $task
+     * @return string
+     */
+    private function getNextExecutionInfo(TaskInterface $task): string
     {
-        $query = $this->createQuery();
-
-        $query->matching(
-            $query->logicalAnd(
-                $query->equals('taskIdentifier', $task->getIdentifier()),
-                $query->logicalNot(
-                    $query->equals('status', TaskStatus::PLANNED)
-                )
-            )
-        )
-            ->setOrderings(['scheduleTime' => QueryInterface::ORDER_DESCENDING]);
-
-        if ($limit > 0) {
-            $query->setLimit($limit);
+        $nextExecution = $this->taskExecutionRepository->findNextScheduled((new \DateTime())->add(new \DateInterval('P10Y')), [], $task);
+        $nextExecutionInfo = 'Not Scheduled';
+        if ($nextExecution instanceof TaskExecution) {
+            $nextExecutionDate = $nextExecution->getScheduleTime()->format('Y-m-d H:i:s');
+            $nextExecutionInfo = $nextExecution->getScheduleTime() < (new \DateTime()) ? sprintf('<error>%s (delayed)</error>', $nextExecutionDate) : $nextExecutionDate;
         }
-
-        if ($offset > 0) {
-            $query->setOffset($offset);
-        }
-
-        return $query->execute();
+        return $nextExecutionInfo;
     }
 
-    public function findNextScheduled(DateTime $runTime, array $skippedExecutions = [], Task $task = null): ?TaskExecution
+    /**
+     * @param string $taskIdentifier
+     * @return TaskInterface
+     * @throws StopCommandException
+     */
+    private function getTaskByIdentifier(string $taskIdentifier): TaskInterface
     {
-        $queryBuilder = $this->createQueryBuilder('taskExecution');
-
-        $queryBuilder
-            ->where($queryBuilder->expr()->lte('taskExecution.scheduleTime', ':scheduleTime'))
-            ->andWhere($queryBuilder->expr()->eq('taskExecution.status', ':status'))
-            ->orderBy('taskExecution.scheduleTime', QueryInterface::ORDER_DESCENDING)
-            ->setMaxResults(1)
-            ->setParameter('scheduleTime', $runTime, Types::DATETIME_MUTABLE)
-            ->setParameter('status', TaskStatus::PLANNED);
-
-        if (!empty($skippedExecutions)) {
-            $queryBuilder->andWhere(
-                $queryBuilder->expr()->not($queryBuilder->expr()->in('taskExecution.Persistence_Object_Identifier', ':skippedExecutions'))
-            )->setParameter('skippedExecutions', $skippedExecutions);
+        try {
+            return $this->taskCollectionFactory->buildTasksFromConfiguration()->getTask($taskIdentifier);
+        } catch (\InvalidArgumentException $exception) {
+            $this->outputLine('<error>No task with id "%s" is configured</error>', [$taskIdentifier]);
+            $this->quit(1);
         }
-
-        if ($task !== null) {
-            $queryBuilder->andWhere(
-                $queryBuilder->expr()->eq('taskExecution.taskIdentifier', ':taskIdentifier'))
-                ->setParameter('taskIdentifier', $task->getIdentifier());
-        }
-
-        return $queryBuilder->getQuery()->getOneOrNullResult(AbstractQuery::HYDRATE_OBJECT);
     }
-
-
 }
