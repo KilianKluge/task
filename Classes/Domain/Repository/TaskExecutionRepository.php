@@ -71,7 +71,7 @@ class TaskExecutionRepository extends Repository
         $constraints = [];
         if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
         if ($stati) {
-            if (str_contains($stati, ",")) {
+            if (strpos($stati, ",")!==false) {
                 $statusConstraints = [];
                 foreach (explode(',', $stati) as $status) {
                     if (substr($status, 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
