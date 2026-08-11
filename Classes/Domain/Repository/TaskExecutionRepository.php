@@ -64,36 +64,47 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function removeByOptions($taskIdentifier, $status, $before): int
+    public function removeByOptions($taskIdentifier, $stati, $before, bool $dry = true): array
     {
         $query = $this->createQuery();
 
         $constraints = [];
         if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
-        if ($status) {
-            if (substr($status, 0, 1)==="!") {
-                $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
+        if ($stati) {
+            if (str_contains($stati, ",")) {
+                $statusConstraints = [];
+                foreach (explode(',', $stati) as $status) {
+                    if (substr($status, 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
+                    else $statusConstraints[] = $query->equals('status', $status);
+                }
+                $constraints[] = $query->logicalOr($statusConstraints);
             } else {
-                $constraints[] = $query->equals('status', $status);
+                if (substr($stati, 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($stati, 1)));
+                else $constraints[] = $query->equals('status', $stati);
             }
         }
-        if ($before) $constraints[] = $query->lessThan('endtime', $before);
-        $query->matching(
-            $query->logicalAnd(
-                $constraints
-            )
+        if ($before) $constraints[] = $query->logicalOr(
+            $query->lessThan('endTime', $before),
+            $query->lessThan('scheduleTime', $before),
         );
+        if ($constraints) {
+            $query->matching(
+                $query->logicalAnd(
+                    $constraints
+                )
+            );
+        }
 
-        $removed = 0;
-        foreach ($query->execute() as $scheduledTask) {
+        $targets = [];
+        foreach ($query->execute() as $taskExecution) {
             try {
-                $this->remove($scheduledTask);
-                $removed++;
+                if (!$dry) $this->remove($taskExecution);
+                $targets[] = $taskExecution;
             } catch (ORMException|IllegalObjectTypeException $e) {
                 throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
             }
         }
-        return $removed;
+        return $targets;
     }
 
     public function findLatestExecution(Task $task, int $limit = 5, int $offset = 0): QueryResultInterface

@@ -162,13 +162,38 @@ class TaskCommandController extends CommandController
      * Can filter by task, task status or date.
      *
      * @param string|null $task Task Identifier
-     * @param string|null $status Status
-     * @param string|null $before Date
+     * @param string|null $status Status, use ',' to seperate multiple, '~' to invert
+     * @param string|null $before Datetime
+     * @param bool $dry Enable dryrun, does not delete entries
+     * @param bool $verbose Enable Verbose output
      */
-    public function cleanCommand(string $task = null, string $status = null, string $before = null): void
+    public function cleanCommand(string $task = null, string $status = null, string $before = null, bool $verbose = false, bool $dry=false): void
     {
-        $removed = $this->taskExecutionRepository->removeByOptions($task, $status, $before);
-        $this->outputLine("Removed ".$removed." entries");
+        $confirm = true;
+        if (!$task && !$status && !$before && !$dry) {
+            $confirm = $this->output->askConfirmation("Do you want to delete all entries? (y/n)", false);
+        }
+        if ($confirm) {
+            $output = $this->taskExecutionRepository->removeByOptions($task, $status, $before, $dry, $verbose);
+            if ($verbose) {
+                $this->output->outputTable(array_map(function (TaskExecution $task) {
+                    /** @var TaskExecution $latestExecution */
+                    return [
+                        $task->getTaskIdentifier(),
+                        $this->getTaskByIdentifier($task->getTaskIdentifier())->getLabel(),
+                        $task->getHandlerClass(),
+                        $task->getStatus(),
+                        $task->getScheduleTime()->format('Y-m-d H:i:s'),
+                        $task->getStatus()!==TaskStatus::PLANNED ? $task->getStartTime()->format('Y-m-d H:i:s') : 'null',
+                        $task->getStatus()!==TaskStatus::PLANNED ? $task->getEndTime()->format('Y-m-d H:i:s') : 'null',
+                    ];
+                }, $output),
+                    ['Identifier', 'Label', 'Handler Class', 'Status', 'Scheduled Time', 'Start Time', 'End Time']
+                );
+
+            }
+            $this->outputLine(($dry ? "Targets " : "Removed ").count($output)." entries");
+        }
     }
 
     /**
