@@ -79,3 +79,9 @@ Show details about a specific task:
 ```bash
 ./flow task:show <taskIdentifier>
 ```
+
+Truncate task history database:
+
+```bash
+./flow task:clean [--task=<taskIdentifier>] [--status=<status>] [--before=<date>]
+```
