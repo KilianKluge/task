@@ -64,13 +64,20 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function removeByOptions(string $taskIdentifier, string $status): int
+    public function removeByOptions($taskIdentifier, $status, $before): int
     {
         $query = $this->createQuery();
 
         $constraints = [];
         if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
-        if ($status) $constraints[] = $query->equals('status', $status);
+        if ($status) {
+            if (substr($status, 0, 1)==="!") {
+                $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
+            } else {
+                $constraints[] = $query->equals('status', $status);
+            }
+        }
+        if ($before) $constraints[] = $query->lessThan('endtime', $before);
         $query->matching(
             $query->logicalAnd(
                 $constraints

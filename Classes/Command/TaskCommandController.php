@@ -155,13 +155,20 @@ class TaskCommandController extends CommandController
     }
 
     /**
+     * Clean task execution history database.
+     *
+     * Removes specified entries from the task execution history database.
+     *
+     * Can filter by task, task status or date.
+     *
      * @param string|null $task Task Identifier
      * @param string|null $status Status
+     * @param string|null $before Date
      */
-    public function cleanCommand(string $task = null, string $status = null): void
+    public function cleanCommand(string $task = null, string $status = null, string $before = null): void
     {
-        $removed = $this->taskExecutionRepository->removeByOptions($task, $status);
-        $this->outputLine("Removed "+$removed+" entries");
+        $removed = $this->taskExecutionRepository->removeByOptions($task, $status, $before);
+        $this->outputLine("Removed ".$removed." entries");
     }
 
     /**
