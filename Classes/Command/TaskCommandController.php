@@ -168,13 +168,13 @@ class TaskCommandController extends CommandController
      */
     public function cleanCommand(string $task = null, string $status = null, string $before = null, bool $verbose = false, bool $dry=false): void
     {
+        $targets = $this->taskExecutionRepository->findByOptions($task, $status, $before);
+
         $confirm = true;
-        if (!$task && !$status && !$before && !$dry) {
-            $confirm = $this->output->askConfirmation("Do you want to delete all entries? [y/N]", false);
-        }
+        if (!$dry) $confirm = $this->output->askConfirmation("Do you want to delete ".(count($targets))." entries? [Y/n]");
 
         if ($confirm) {
-            $output = $this->taskExecutionRepository->removeByOptions($task, $status, $before, $dry, $verbose);
+            if (!$dry) $this->taskExecutionRepository->removeEntries($targets);
 
             if ($verbose) {
                 $this->output->outputTable(array_map(function (TaskExecution $task) {
@@ -191,12 +191,12 @@ class TaskCommandController extends CommandController
                         $task->getStatus()!==TaskStatus::PLANNED ? $task->getStartTime()->format('Y-m-d H:i:s') : 'null',
                         $task->getStatus()!==TaskStatus::PLANNED ? $task->getEndTime()->format('Y-m-d H:i:s') : 'null',
                     ];
-                }, $output),
+                }, $targets),
                     ['Identifier', 'Label', 'Handler Class', 'Status', 'Scheduled Time', 'Start Time', 'End Time']
                 );
 
             }
-            $this->outputLine(($dry ? "Targets " : "Removed ").count($output)." entries");
+            $this->outputLine(($dry ? "Targets " : "Removed ").count($targets)." entries");
         }
     }
 

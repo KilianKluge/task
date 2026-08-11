@@ -64,7 +64,7 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function removeByOptions($taskIdentifier, $statuses, $before, bool $dry = true): array
+    public function findByOptions($taskIdentifier, $statuses, $before): array
     {
         $query = $this->createQuery();
 
@@ -98,15 +98,18 @@ class TaskExecutionRepository extends Repository
             );
         }
 
-        $targets = $query->execute()->toArray();
-        foreach ($targets as $taskExecution) {
+        return $query->execute()->toArray();
+    }
+
+    public function removeEntries($entries)
+    {
+        foreach ($entries as $entry) {
             try {
-                if (!$dry) $this->remove($taskExecution);
+                $this->remove($entry);
             } catch (ORMException|IllegalObjectTypeException $e) {
                 throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
             }
         }
-        return $targets;
     }
 
     public function findLatestExecution(Task $task, int $limit = 5, int $offset = 0): QueryResultInterface
