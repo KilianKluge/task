@@ -178,9 +178,13 @@ class TaskCommandController extends CommandController
             if ($verbose) {
                 $this->output->outputTable(array_map(function (TaskExecution $task) {
                     /** @var TaskExecution $latestExecution */
+                    $label = '';
+                    try {
+                        $label = $this->getTaskByIdentifier($task->getTaskIdentifier())->getLabel();
+                    } catch (StopCommandException $exception) {}
                     return [
                         $task->getTaskIdentifier(),
-                        $this->getTaskByIdentifier($task->getTaskIdentifier())->getLabel(),
+                        $label,
                         $task->getHandlerClass(),
                         $task->getStatus(),
                         $task->getScheduleTime()->format('Y-m-d H:i:s'),
