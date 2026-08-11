@@ -7,7 +7,6 @@ use Flowpack\Task\Domain\Model\TaskExecution;
 use Flowpack\Task\Domain\Repository\TaskExecutionRepository;
 use Flowpack\Task\Domain\Runner\TaskRunner;
 use Flowpack\Task\Domain\Scheduler\Scheduler;
-use Flowpack\Task\Domain\Task\Task;
 use Flowpack\Task\Domain\Task\TaskCollectionFactory;
 use Flowpack\Task\Domain\Task\TaskExecutionHistory;
 use Flowpack\Task\Domain\Task\TaskInterface;
@@ -171,13 +170,14 @@ class TaskCommandController extends CommandController
     {
         $confirm = true;
         if (!$task && !$status && !$before && !$dry) {
-            $confirm = $this->output->askConfirmation("Do you want to delete all entries? (y/n)", false);
+            $confirm = $this->output->askConfirmation("Do you want to delete all entries? [y/N]", false);
         }
+
         if ($confirm) {
             $output = $this->taskExecutionRepository->removeByOptions($task, $status, $before, $dry, $verbose);
+
             if ($verbose) {
                 $this->output->outputTable(array_map(function (TaskExecution $task) {
-                    /** @var TaskExecution $latestExecution */
                     $label = '';
                     try {
                         $label = $this->getTaskByIdentifier($task->getTaskIdentifier())->getLabel();

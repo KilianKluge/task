@@ -64,29 +64,32 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function removeByOptions($taskIdentifier, $stati, $before, bool $dry = true): array
+    public function removeByOptions($taskIdentifier, $statuses, $before, bool $dry = true): array
     {
         $query = $this->createQuery();
 
         $constraints = [];
         if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
-        if ($stati) {
-            if (strpos($stati, ",")!==false) {
+        if ($statuses) {
+            if (strpos($statuses, ",")!==false) {
                 $statusConstraints = [];
-                foreach (explode(',', $stati) as $status) {
-                    if (substr($status, 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
+
+                foreach (explode(',', $statuses) as $status) {
+                    if (substr(trim($status), 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
                     else $statusConstraints[] = $query->equals('status', $status);
                 }
+
                 $constraints[] = $query->logicalOr($statusConstraints);
             } else {
-                if (substr($stati, 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($stati, 1)));
-                else $constraints[] = $query->equals('status', $stati);
+                if (substr(trim($statuses), 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($statuses, 1)));
+                else $constraints[] = $query->equals('status', $statuses);
             }
         }
         if ($before) $constraints[] = $query->logicalOr(
             $query->lessThan('endTime', $before),
             $query->lessThan('scheduleTime', $before),
         );
+
         if ($constraints) {
             $query->matching(
                 $query->logicalAnd(
@@ -95,11 +98,10 @@ class TaskExecutionRepository extends Repository
             );
         }
 
-        $targets = [];
-        foreach ($query->execute() as $taskExecution) {
+        $targets = $query->execute()->toArray();
+        foreach ($targets as $taskExecution) {
             try {
                 if (!$dry) $this->remove($taskExecution);
-                $targets[] = $taskExecution;
             } catch (ORMException|IllegalObjectTypeException $e) {
                 throw new \RuntimeException('Failed to remove task from execution repository', 1645610863, $e);
             }
