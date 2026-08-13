@@ -20,12 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-versions:  ['8.3', '8.4', '8.5']
+        php-versions:  ['8.4', '8.5']
         flow-versions: ['9.0', '9.1', '9.2']
         dependencies: ['highest']
         include:
-          - { php-versions: '8.0', flow-versions: '8.3'}
-          - { php-versions: '8.0', flow-versions: '8.4'}
+          - { php-versions: '8.2', flow-versions: '8.3'}
+          - { php-versions: '8.2', flow-versions: '8.4'}
+          - { php-versions: '8.3', flow-versions: '9.0'}
 
     defaults:
       run:
