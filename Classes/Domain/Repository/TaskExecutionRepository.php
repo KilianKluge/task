@@ -64,37 +64,47 @@ class TaskExecutionRepository extends Repository
         }
     }
 
-    public function findByOptions($taskIdentifier, $statuses, $before): array
+    /**
+     * Queries task executions by parameters.
+     *
+     * @param string|null $taskIdentifier
+     * @param string|null $before
+     * @param array $posStatuses
+     * @param array $negStatuses
+     * @return array
+     */
+    public function findByOptions(?string $taskIdentifier, ?string $before, array $posStatuses, array $negStatuses): array
     {
         $query = $this->createQuery();
 
         $constraints = [];
-        if ($taskIdentifier) {
+        if ($taskIdentifier !== null) {
             $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
         }
-        if ($statuses) {
-            $statusConstraints = [];
-
-            foreach (explode(',', $statuses) as $status) {
-                if (substr(trim($status), 0, 1)==="~") {
-                    $constraints[] = $query->logicalNot(
-                        $query->equals('status', substr($status, 1))
-                    );
-                } else {
-                    $statusConstraints[] = $query->equals('status', $status);
-                }
-            }
-
-            if (count($statusConstraints)==1) {
-                $constraints[] = $statusConstraints[0];
-            } elseif (count($statusConstraints)>1) {
-                $constraints[] = $query->logicalOr($statusConstraints);
-            }
-        }
-        if ($before) $constraints[] = $query->logicalOr(
+        if ($before !== null) $constraints[] = $query->logicalOr(
             $query->lessThan('endTime', $before),
             $query->lessThan('scheduleTime', $before),
         );
+        if ($posStatuses) {
+            $statusConstraints = [];
+
+            foreach ($posStatuses as $posStatus) {
+                $statusConstraints[] = $query->equals('status', $posStatus);
+            }
+
+            if (count($statusConstraints) === 1) {
+                $constraints[] = $statusConstraints[0];
+            } elseif (count($statusConstraints) > 1) {
+                $constraints[] = $query->logicalOr($statusConstraints);
+            }
+        }
+        if ($negStatuses) {
+            foreach ($negStatuses as $negStatus) {
+                $constraints[] = $query->logicalNot(
+                    $query->equals('status', $negStatus)
+                );
+            }
+        }
 
         if ($constraints) {
             $query->matching(

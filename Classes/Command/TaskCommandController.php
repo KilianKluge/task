@@ -161,17 +161,30 @@ class TaskCommandController extends CommandController
      * Can filter by task, task status or date.
      *
      * @param string|null $task Task Identifier
-     * @param string|null $status Status, use ',' to seperate multiple, '~' to invert
      * @param string|null $before Datetime
+     * @param string|null $status Status, use ',' to seperate multiple, '~' to invert
      * @param bool $dry Enable dryrun, does not delete entries
      * @param bool $verbose Enable Verbose output
      */
-    public function cleanCommand(string $task = null, string $status = null, string $before = null, bool $verbose = false, bool $dry=false): void
+    public function cleanCommand(?string $task = null, ?string $before = null, ?string $status = null, bool $verbose = false, bool $dry=false): void
     {
-        $targets = $this->taskExecutionRepository->findByOptions($task, $status, $before);
+        $posStatuses = [];
+        $negStatuses = [];
+        if ($status !== null) {
+            foreach (explode(',', $status) as $s) {
+                $s = trim($s);
+                if (substr($s, 0, 1) === "~") {
+                    $posStatuses[] = substr($s, 1);
+                } else {
+                    $negStatuses[] = $s;
+                }
+            }
+        }
+
+        $targets = $this->taskExecutionRepository->findByOptions($task, $before, $posStatuses, $negStatuses);
 
         $confirm = true;
-        if (!$dry) $confirm = $this->output->askConfirmation("Do you want to delete ".(count($targets))." entries? [Y/n]");
+        if (!$dry) $confirm = $this->output->askConfirmation("Do you want to delete " . (count($targets)) . " entries? [Y/n]");
 
         if ($confirm) {
             if (!$dry) $this->taskExecutionRepository->removeEntries($targets);
@@ -196,7 +209,7 @@ class TaskCommandController extends CommandController
                 );
 
             }
-            $this->outputLine(($dry ? "Targets " : "Removed ").count($targets)." entries");
+            $this->outputLine(($dry ? "Targets " : "Removed ") . count($targets) . " entries");
         }
     }
 
