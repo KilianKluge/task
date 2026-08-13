@@ -69,11 +69,10 @@ class TaskExecutionRepository extends Repository
      *
      * @param string|null $taskIdentifier
      * @param string|null $before
-     * @param array $posStatuses
-     * @param array $negStatuses
+     * @param array $statusArray
      * @return array
      */
-    public function findByOptions(?string $taskIdentifier, ?string $before, array $posStatuses, array $negStatuses): array
+    public function findByOptions(?string $taskIdentifier, ?string $before, array $statusArray): array
     {
         $query = $this->createQuery();
 
@@ -85,24 +84,17 @@ class TaskExecutionRepository extends Repository
             $query->lessThan('endTime', $before),
             $query->lessThan('scheduleTime', $before),
         );
-        if ($posStatuses) {
+        if ($statusArray) {
             $statusConstraints = [];
 
-            foreach ($posStatuses as $posStatus) {
-                $statusConstraints[] = $query->equals('status', $posStatus);
+            foreach ($statusArray as $status) {
+                $statusConstraints[] = $query->equals('status', $status);
             }
 
             if (count($statusConstraints) === 1) {
                 $constraints[] = $statusConstraints[0];
             } elseif (count($statusConstraints) > 1) {
                 $constraints[] = $query->logicalOr($statusConstraints);
-            }
-        }
-        if ($negStatuses) {
-            foreach ($negStatuses as $negStatus) {
-                $constraints[] = $query->logicalNot(
-                    $query->equals('status', $negStatus)
-                );
             }
         }
 

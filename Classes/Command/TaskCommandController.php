@@ -162,26 +162,20 @@ class TaskCommandController extends CommandController
      *
      * @param string|null $task Task Identifier
      * @param string|null $before Datetime
-     * @param string|null $status Status, use ',' to seperate multiple, '~' to invert
+     * @param string|null $status Status, use ',' to separate multiple
      * @param bool $dry Enable dryrun, does not delete entries
      * @param bool $verbose Enable Verbose output
      */
     public function cleanCommand(?string $task = null, ?string $before = null, ?string $status = null, bool $verbose = false, bool $dry=false): void
     {
-        $posStatuses = [];
-        $negStatuses = [];
+        $statusArray = [];
         if ($status !== null) {
             foreach (explode(',', $status) as $s) {
-                $s = trim($s);
-                if (substr($s, 0, 1) === "~") {
-                    $posStatuses[] = substr($s, 1);
-                } else {
-                    $negStatuses[] = $s;
-                }
+                $statusArray[] = trim($s);
             }
         }
 
-        $targets = $this->taskExecutionRepository->findByOptions($task, $before, $posStatuses, $negStatuses);
+        $targets = $this->taskExecutionRepository->findByOptions($task, $before, $statusArray);
 
         $confirm = true;
         if (!$dry) $confirm = $this->output->askConfirmation("Do you want to delete " . (count($targets)) . " entries? [Y/n]");
