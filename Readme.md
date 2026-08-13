@@ -39,6 +39,8 @@ Flowpack:
 
 * `keepTaskExecutionHistory`: Number of task executions to keep in the database. (default: 3)
 
+* `keepRemovedTasksInTaskExecutionHistory`: Boolean to keep removed tasks in the database (default: true).
+
 ## Implementing A Task Handler
 
 A task handler contains the code executed for a specific task. Your command handler has to implement one of the following interfaces:
