@@ -69,20 +69,26 @@ class TaskExecutionRepository extends Repository
         $query = $this->createQuery();
 
         $constraints = [];
-        if ($taskIdentifier) $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
+        if ($taskIdentifier) {
+            $constraints[] = $query->equals('taskIdentifier', $taskIdentifier);
+        }
         if ($statuses) {
-            if (strpos($statuses, ",")!==false) {
-                $statusConstraints = [];
+            $statusConstraints = [];
 
-                foreach (explode(',', $statuses) as $status) {
-                    if (substr(trim($status), 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($status, 1)));
-                    else $statusConstraints[] = $query->equals('status', $status);
+            foreach (explode(',', $statuses) as $status) {
+                if (substr(trim($status), 0, 1)==="~") {
+                    $constraints[] = $query->logicalNot(
+                        $query->equals('status', substr($status, 1))
+                    );
+                } else {
+                    $statusConstraints[] = $query->equals('status', $status);
                 }
+            }
 
+            if (count($statusConstraints)==1) {
+                $constraints[] = $statusConstraints[0];
+            } elseif (count($statusConstraints)>1) {
                 $constraints[] = $query->logicalOr($statusConstraints);
-            } else {
-                if (substr(trim($statuses), 0, 1)==="~") $constraints[] = $query->logicalNot($query->equals('status', substr($statuses, 1)));
-                else $constraints[] = $query->equals('status', $statuses);
             }
         }
         if ($before) $constraints[] = $query->logicalOr(
