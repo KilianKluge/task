@@ -109,7 +109,12 @@ class TaskExecutionRepository extends Repository
         return $query->execute()->toArray();
     }
 
-    public function removeEntries($entries)
+    /**
+     * @param array $entries
+     * @return void
+     * @throws \RuntimeException
+     */
+    public function removeEntries(array $entries): void
     {
         foreach ($entries as $entry) {
             try {
